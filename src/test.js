@@ -1,33 +1,41 @@
 import './proxy.js';
-import crypto from 'crypto';
+import { getPrice, getCandles, getTrades } from './data/okx/market.js';
+import { getPriceInfo, getHolders, searchToken } from './data/okx/token.js';
+import { getTokenBalances, getTotalValue } from './data/okx/portfolio.js';
 
-const { OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE } = process.env;
+const CHAIN = '501';
+const SOL   = 'So11111111111111111111111111111111111111112';
 
-async function okxFetch(method, path, body) {
-  const timestamp = new Date().toISOString();
-  const bodyStr = body ? JSON.stringify(body) : '';
-  const sign = crypto
-    .createHmac('sha256', OKX_SECRET_KEY)
-    .update(timestamp + method + path + bodyStr)
-    .digest('base64');
+// ── market.js ──────────────────────────────────────────────
+const price = await getPrice(CHAIN, SOL);
+console.log('getPrice:   ', price);
 
-  const res = await fetch(`https://web3.okx.com${path}`, {
-    method,
-    headers: {
-      'OK-ACCESS-KEY': OKX_API_KEY,
-      'OK-ACCESS-SIGN': sign,
-      'OK-ACCESS-PASSPHRASE': OKX_PASSPHRASE,
-      'OK-ACCESS-TIMESTAMP': timestamp,
-      'Content-Type': 'application/json',
-    },
-    ...(body && { body: bodyStr }),
-  });
-  const json = await res.json();
-  if (json.code !== '0') throw new Error(json.msg || `API error: ${json.code}`);
-  return json.data;
-}
+const candles = await getCandles(CHAIN, SOL, '5m', 3);
+console.log('getCandles: ', candles[0]);
 
-const data = await okxFetch('POST', '/api/v6/dex/market/price', [
-  { chainIndex: '501', tokenContractAddress: 'So11111111111111111111111111111111111111112' },
-]);
-console.log(`SOL: $${parseFloat(data[0].price).toFixed(2)}`);
+const trades = await getTrades(CHAIN, SOL, 3);
+console.log('getTrades:  ', trades[0]);
+
+// ── token.js ───────────────────────────────────────────────
+const info = await getPriceInfo(CHAIN, SOL);
+console.log('getPriceInfo:', {
+  price: info.price,
+  marketCap: info.marketCap,
+  priceChange5M: info.priceChange5M,
+  priceChange4H: info.priceChange4H,
+});
+
+const holders = await getHolders(CHAIN, SOL);
+console.log('getHolders: ', holders[0]);
+
+const found = await searchToken(CHAIN, 'SOL');
+console.log('searchToken:', found[0]);
+
+// ── portfolio.js ───────────────────────────────────────────
+// 用一个公开的 Solana 地址测试（Binance 热钱包）
+const WALLET = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
+const balances = await getTokenBalances(WALLET, CHAIN);
+console.log('getTokenBalances:', balances.slice(0, 2));
+
+const total = await getTotalValue(WALLET, CHAIN);
+console.log('getTotalValue:', total);
