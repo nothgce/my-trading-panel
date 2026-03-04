@@ -24,7 +24,7 @@ async function buildFrequencyMaps(wallets, excludeCA, label) {
   const tradeRaw = new Map();
 
   const addHolding = (contract, symbol, wallet, usdValue) => {
-    if (!contract || contract === excludeCA) return;
+    if (!contract || contract.toLowerCase() === excludeCA.toLowerCase()) return;
     if ((usdValue || 0) < 1) return;   // 跳过持仓价值 < $1 的（零价/僵尸持仓）
     if (!holdRaw.has(contract)) holdRaw.set(contract, { symbol: symbol || contract.slice(0, 8) + '…', wallets: new Set(), totalUsd: 0 });
     const e = holdRaw.get(contract);
