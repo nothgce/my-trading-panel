@@ -18,7 +18,7 @@ async function poll() {
   while (true) {
     try {
       const res = await fetch(
-        `${base}/getUpdates?offset=${offset}&timeout=25&allowed_updates=${encodeURIComponent('["message"]')}`,
+        `${base}/getUpdates?offset=${offset}&timeout=25&allowed_updates=${encodeURIComponent('["message","callback_query"]')}`,
         { signal: AbortSignal.timeout(35_000) },
       );
       const j = await res.json();

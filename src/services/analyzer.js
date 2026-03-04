@@ -18,14 +18,24 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  *   Map<contract, { symbol: string, count: number }>
  */
 async function buildFrequencyMaps(wallets, excludeCA, label) {
-  // contract → { symbol, wallets: Set<address> }
+  // holdRaw:  contract → { symbol, wallets: Set, totalUsd: number }
+  // tradeRaw: contract → { symbol, wallets: Set }
   const holdRaw  = new Map();
   const tradeRaw = new Map();
 
-  const addTo = (map, contract, symbol, wallet) => {
+  const addHolding = (contract, symbol, wallet, usdValue) => {
     if (!contract || contract === excludeCA) return;
-    if (!map.has(contract)) map.set(contract, { symbol: symbol || contract.slice(0, 8) + '…', wallets: new Set() });
-    map.get(contract).wallets.add(wallet);
+    if ((usdValue || 0) < 1) return;   // 跳过持仓价值 < $1 的（零价/僵尸持仓）
+    if (!holdRaw.has(contract)) holdRaw.set(contract, { symbol: symbol || contract.slice(0, 8) + '…', wallets: new Set(), totalUsd: 0 });
+    const e = holdRaw.get(contract);
+    e.wallets.add(wallet);
+    e.totalUsd += usdValue;
+  };
+
+  const addTrade = (contract, symbol, wallet) => {
+    if (!contract || contract === excludeCA) return;
+    if (!tradeRaw.has(contract)) tradeRaw.set(contract, { symbol: symbol || contract.slice(0, 8) + '…', wallets: new Set() });
+    tradeRaw.get(contract).wallets.add(wallet);
   };
 
   for (let i = 0; i < wallets.length; i += CONCURRENCY) {
@@ -37,14 +47,14 @@ async function buildFrequencyMaps(wallets, excludeCA, label) {
           getWalletTradeHistory(wallet, '501', 100).catch(() => []),
         ]);
         for (const h of holdings)
-          addTo(holdRaw, h.tokenContractAddress, h.symbol, wallet);
+          addHolding(h.tokenContractAddress, h.symbol, wallet, h.usdValue);
 
         // 同一钱包同一合约只计一次
         const seen = new Set();
         for (const t of trades) {
           if (seen.has(t.tokenContractAddress)) continue;
           seen.add(t.tokenContractAddress);
-          addTo(tradeRaw, t.tokenContractAddress, t.tokenSymbol, wallet);
+          addTrade(t.tokenContractAddress, t.tokenSymbol, wallet);
         }
       } catch { /* 单个钱包失败跳过 */ }
     }));
@@ -54,10 +64,13 @@ async function buildFrequencyMaps(wallets, excludeCA, label) {
   }
   if (label) console.log();
 
-  const flatten = raw => new Map(
-    [...raw.entries()].map(([k, v]) => [k, { symbol: v.symbol, count: v.wallets.size }])
+  const flattenHold = raw => new Map(
+    [...raw.entries()].map(([k, v]) => [k, { symbol: v.symbol, count: v.wallets.size, wallets: [...v.wallets], totalUsd: v.totalUsd }])
   );
-  return { holdMap: flatten(holdRaw), tradeMap: flatten(tradeRaw) };
+  const flattenTrade = raw => new Map(
+    [...raw.entries()].map(([k, v]) => [k, { symbol: v.symbol, count: v.wallets.size, wallets: [...v.wallets] }])
+  );
+  return { holdMap: flattenHold(holdRaw), tradeMap: flattenTrade(tradeRaw) };
 }
 
 /**
@@ -77,10 +90,10 @@ export async function analyzeToken(tokenAddress, {
 
   // 先取市值，计算最低成交额过滤阈值（万分之一市值）
   const priceInfo = await getPriceInfo('501', tokenAddress);
-  const minTradeUsd = Math.max(0.01, parseFloat(priceInfo.marketCap ?? '0') / 10000);
+  const minTradeUsd = Math.min(50, Math.max(0.01, parseFloat(priceInfo.marketCap ?? '0') / 10000));
   console.log(`  市值: $${parseFloat(priceInfo.marketCap ?? '0').toFixed(0)}, 最低成交过滤: $${minTradeUsd.toFixed(4)}`);
 
-  process.stdout.write('  获取近期交易者（去重）...');
+  process.stdout.write('  获取近期交易者（去重 + 过滤刷量）...');
   const traderAddrs = await getTraderAddresses(tokenAddress, traderTopN, minTradeUsd);
   console.log(` ${traderAddrs.length} 人`);
 
@@ -106,5 +119,8 @@ export async function analyzeToken(tokenAddress, {
  * @returns {Array<{ symbol: string, count: number }>}
  */
 export function topN(map, n = 20) {
-  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, n);
+  return [...map.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, n)
+    .map(([contract, v]) => ({ contract, symbol: v.symbol, count: v.count, totalUsd: v.totalUsd }));
 }
