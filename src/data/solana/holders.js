@@ -1,5 +1,7 @@
 // 数据层：Solana RPC — 链上获取 Token 持仓排行（无数量上限）
-const RPC = 'https://api.mainnet-beta.solana.com';
+// 推荐 Helius（免费档 100k credits/day）：https://helius.dev
+// .env: SOLANA_RPC=https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
+const RPC = process.env.SOLANA_RPC ?? 'https://api.mainnet-beta.solana.com';
 const TOKEN_PROGRAM   = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN22_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 
@@ -47,13 +49,33 @@ export async function getHolderAddresses(tokenAddress, topN = 100) {
  * @returns {Array<{ holderWalletAddress: string, holdAmount: string, holdRatio: string }>}
  */
 export async function getHoldersSolana(mintAddress, topN = 100) {
-  // 自动检测 Token Program 版本（旧版165字节，Token-2022同布局）
-  const filters = [{ dataSize: 165 }, { memcmp: { offset: 0, bytes: mintAddress } }];
-  const opts = { encoding: 'base64', commitment: 'confirmed', filters };
+  // 只取 owner(32B) + amount(8B)，大幅缩减响应体积，兼容 Token-2022 扩展账户
+  const dataSlice = { offset: 32, length: 40 };
 
-  let result = await rpcCall('getProgramAccounts', [TOKEN_PROGRAM, opts]);
-  if (!result?.length)
-    result = await rpcCall('getProgramAccounts', [TOKEN22_PROGRAM, opts]);
+  // 标准 SPL Token：账户固定 165 字节，加 dataSize 进一步缩小
+  const optsV1 = {
+    encoding: 'base64', commitment: 'confirmed',
+    dataSlice,
+    filters: [{ dataSize: 165 }, { memcmp: { offset: 0, bytes: mintAddress } }],
+  };
+  // Token-2022：账户带扩展（如 TransferFeeAmount），大小不固定，不能加 dataSize
+  const optsV2 = {
+    encoding: 'base64', commitment: 'confirmed',
+    dataSlice,
+    filters: [{ memcmp: { offset: 0, bytes: mintAddress } }],
+  };
+
+  let result = await rpcCall('getProgramAccounts', [TOKEN_PROGRAM, optsV1]);
+  if (!result?.length) {
+    try {
+      result = await rpcCall('getProgramAccounts', [TOKEN22_PROGRAM, optsV2]);
+    } catch (err) {
+      // 公共 RPC 不支持不带 dataSize 的大程序扫描，需配置 Helius
+      // .env: SOLANA_RPC=https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
+      console.warn('[holders] Token-2022 查询失败（建议配置 Helius RPC）:', err?.message ?? err?.code ?? err);
+      return [];
+    }
+  }
 
   if (!result?.length) return [];
 
@@ -61,8 +83,8 @@ export async function getHoldersSolana(mintAddress, topN = 100) {
   const accounts = result
     .map(({ account, pubkey }) => {
       const data = Buffer.from(account.data[0], 'base64');
-      const owner = decodePublicKey(data, 32);
-      const amount = decodeLEBigInt(data, 64);
+      const owner = decodePublicKey(data, 0);   // slice starts at absolute offset 32
+      const amount = decodeLEBigInt(data, 32);  // amount at absolute offset 64 → relative 32
       return { owner, amount, pubkey };
     })
     .filter(a => a.amount > 0n)
