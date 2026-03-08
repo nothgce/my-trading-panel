@@ -5,9 +5,19 @@ import { getHolderAddresses } from '../data/solana/holders.js';
 import { getTopHoldings } from '../data/okx/portfolio.js';
 import { getWalletTradeHistory } from '../data/okx/wallet.js';
 
-const CONCURRENCY = 5;
-const DELAY_MS = 250;
+const CONCURRENCY = 3;
+const DELAY_MS    = 600;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// 失败后指数退避重试，最多 attempts 次
+async function withRetry(fn, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); } catch {
+      if (i < attempts - 1) await sleep(800 * 2 ** i); // 800ms, 1600ms
+    }
+  }
+  return null; // 全部失败
+}
 
 /**
  * 对一组钱包地址批量查持仓和交易记录，统计各代币出现人数
@@ -38,31 +48,36 @@ async function buildFrequencyMaps(wallets, excludeCA, label) {
     tradeRaw.get(contract).wallets.add(wallet);
   };
 
+  let failed = 0;
   for (let i = 0; i < wallets.length; i += CONCURRENCY) {
     const batch = wallets.slice(i, i + CONCURRENCY);
     await Promise.all(batch.map(async wallet => {
-      try {
-        const [holdings, trades] = await Promise.all([
-          getTopHoldings(wallet, 20).catch(() => []),
-          getWalletTradeHistory(wallet, '501', 100).catch(() => []),
-        ]);
-        for (const h of holdings)
-          addHolding(h.tokenContractAddress, h.symbol, wallet, h.usdValue);
+      const [holdings, trades] = await Promise.all([
+        withRetry(() => getTopHoldings(wallet, 20)),
+        withRetry(() => getWalletTradeHistory(wallet, '501', 100)),
+      ]);
 
-        // 同一钱包同一合约只计一次
-        const seen = new Set();
-        for (const t of trades) {
-          if (seen.has(t.tokenContractAddress)) continue;
-          seen.add(t.tokenContractAddress);
-          addTrade(t.tokenContractAddress, t.tokenSymbol, wallet);
-        }
-      } catch { /* 单个钱包失败跳过 */ }
+      if (holdings === null && trades === null) { failed++; return; }
+
+      for (const h of (holdings ?? []))
+        addHolding(h.tokenContractAddress, h.symbol, wallet, h.usdValue);
+
+      // 同一钱包同一合约只计一次
+      const seen = new Set();
+      for (const t of (trades ?? [])) {
+        if (seen.has(t.tokenContractAddress)) continue;
+        seen.add(t.tokenContractAddress);
+        addTrade(t.tokenContractAddress, t.tokenSymbol, wallet);
+      }
     }));
 
     if (label) process.stdout.write(`\r  ${label}: ${Math.min(i + CONCURRENCY, wallets.length)}/${wallets.length}`);
     if (i + CONCURRENCY < wallets.length) await sleep(DELAY_MS);
   }
-  if (label) console.log();
+  if (label) {
+    const suffix = failed ? `  ⚠ ${failed} 个钱包失败` : '';
+    console.log(suffix);
+  }
 
   const flattenHold = raw => new Map(
     [...raw.entries()].map(([k, v]) => [k, { symbol: v.symbol, count: v.wallets.size, wallets: [...v.wallets], totalUsd: v.totalUsd }])
@@ -101,10 +116,9 @@ export async function analyzeToken(tokenAddress, {
   const holderAddrs = await getHolderAddresses(tokenAddress, holderTopN);
   console.log(` ${holderAddrs.length} 个`);
 
-  const [traders, holders] = await Promise.all([
-    buildFrequencyMaps(traderAddrs, tokenAddress, '  交易者'),
-    buildFrequencyMaps(holderAddrs, tokenAddress, '  大户'),
-  ]);
+  // 串行避免两组同时打 API 触发限速
+  const traders = await buildFrequencyMaps(traderAddrs, tokenAddress, '  交易者');
+  const holders = await buildFrequencyMaps(holderAddrs, tokenAddress, '  大户');
 
   return {
     traders: { addresses: traderAddrs, ...traders },
