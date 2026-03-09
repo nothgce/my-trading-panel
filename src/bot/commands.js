@@ -57,13 +57,13 @@ function escHtml(s) {
 
 const isSolanaAddr = addr => typeof addr === 'string' && addr.length >= 32;
 
-function okxLink(addr) {
+function gmgnLink(addr) {
   if (!isSolanaAddr(addr)) return '';
-  return `<a href="https://web3.okx.com/token/solana/${addr}">🔗</a>`;
+  return `<a href="https://gmgn.ai/sol/token/${addr}">🔗</a>`;
 }
 
 function walletLink(addr) {
-  return `<a href="https://web3.okx.com/portfolio/${addr}">🔗</a>`;
+  return `<a href="https://gmgn.ai/sol/address/${addr}">🔗</a>`;
 }
 
 function fmtTable(rows) {
@@ -71,7 +71,7 @@ function fmtTable(rows) {
   return rows.map(r => {
     const sym = r.symbol.length > 12 ? r.symbol.slice(0, 11) + '…' : r.symbol;
     const usd  = r.totalUsd != null && r.totalUsd > 0 ? ` ${fmtUsd(r.totalUsd)}` : '';
-    const link = r.contract ? ` ${okxLink(r.contract)}` : '';
+    const link = r.contract ? ` ${gmgnLink(r.contract)}` : '';
     return `  ${escHtml(sym.padEnd(13))} · ${r.count}人${usd}${link}`;
   }).join('\n');
 }
@@ -158,7 +158,7 @@ async function _handleCallback(query) {
 async function _handleCa(ca) {
   if (!ca) return sendMessage('用法: /ca <代币合约地址>');
   await sendMessage([
-    `🔍 分析中: <code>${ca}</code> ${okxLink(ca)}`,
+    `🔍 分析中: <code>${ca}</code> ${gmgnLink(ca)}`,
     ``,
     `• 交易者: 最近 500 笔成交去重，过滤刷量，最低成交 = 万分之一市值（上限 $50）`,
     `• 大户: Solana RPC 链上持仓前 ${telegramConfig.topHolderCount} 名`,
@@ -197,7 +197,7 @@ async function _sendAnalysisResult(ca, { traders, holders }) {
 
   await sendMessage([
     `✅ <b>CA 分析完成</b>`,
-    `合约: <code>${ca}</code> ${okxLink(ca)}`,
+    `合约: <code>${ca}</code> ${gmgnLink(ca)}`,
     ``,
     `近期交易者: ${traders.addresses.length} 人`,
     `链上大户:   ${holders.addresses.length} 人`,

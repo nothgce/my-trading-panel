@@ -2,7 +2,7 @@
 import { getDiscoveryList } from '../data/okx/discovery.js';
 
 const INTERVAL_MS = 60_000;
-const BASE_OKX    = 'https://web3.okx.com';
+const BASE_GMGN   = 'https://gmgn.ai';
 
 let _timer    = null;
 let _onUpdate = null;   // callback(text: string)
@@ -27,7 +27,7 @@ function fmtToken(t, rank) {
 
   const arrow5m = ch5m >= 0 ? '▲' : '▼';
   const arrow1h = ch1h >= 0 ? '▲' : '▼';
-  const link    = ca ? `<a href="${BASE_OKX}/token/solana/${ca}">🔗</a>` : '';
+  const link    = ca ? `<a href="${BASE_GMGN}/sol/token/${ca}">🔗</a>` : '';
 
   return (
     `${rank}. <b>$${symbol}</b> ${link}\n` +
