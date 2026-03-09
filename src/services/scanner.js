@@ -77,7 +77,7 @@ async function _run() {
 
     const text = fmtMessage(list);
     console.log('[scanner]\n' + text.replace(/<[^>]+>/g, ''));
-    _onUpdate?.(text);
+    _onUpdate?.(text)?.catch(e => console.error('[scanner] 推送失败:', e?.message ?? e));
   } catch (err) {
     console.error('[scanner] 错误:', err?.msg ?? err?.message ?? err);
   }
