@@ -1,8 +1,6 @@
 // 数据层：钱包交易历史 — OKX 内部接口，无需签名
 const BASE = 'https://web3.okx.com';
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
 async function fetchPage(walletAddress, chainId, pageSize, cursor, blockTimeMin, blockTimeMax) {
   const qs = new URLSearchParams({
     walletAddress, chainId, pageSize: String(pageSize),
@@ -49,21 +47,11 @@ async function fetchPage(walletAddress, chainId, pageSize, cursor, blockTimeMin,
 export async function getWalletTradeHistory(walletAddress, chainId = '501', limit = 100, daysBack = 180) {
   const now = Date.now();
   const blockTimeMin = now - daysBack * 24 * 60 * 60 * 1000;
-  const blockTimeMax = now + 24 * 60 * 60 * 1000; // 留一天余量
+  const blockTimeMax = now + 24 * 60 * 60 * 1000;
 
-  const PAGE = 50;
-  const results = [];
-  let cursor = null;
-  let hasNext = true;
-
-  while (hasNext && results.length < limit) {
-    const data = await fetchPage(walletAddress, chainId, PAGE, cursor, blockTimeMin, blockTimeMax);
-    const rows = data?.rows ?? [];
-    results.push(...rows);
-    hasNext = data?.hasNext === true;
-    cursor = rows[rows.length - 1]?.globalIndex ?? null;
-    if (hasNext && results.length < limit) await sleep(300);
-  }
+  // 单页拉取，pageSize 直接等于 limit，省去分页循环
+  const data = await fetchPage(walletAddress, chainId, limit, null, blockTimeMin, blockTimeMax);
+  const results = data?.rows ?? [];
 
   return results.slice(0, limit).map(r => ({
     tokenContractAddress: r.tokenContractAddress,

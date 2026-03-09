@@ -1,12 +1,12 @@
 import './proxy.js';
-import { handleUpdate, sendAlert, sendMessage } from './bot/commands.js';
-import { start as startMonitor } from './services/monitor.js';
+import { handleUpdate, sendMessage } from './bot/commands.js';
+import { startScanner } from './services/scanner.js';
 import { telegramConfig } from './config/telegram.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ─── 启动监控 ─────────────────────────────────────────────────────────────────
-startMonitor(sendAlert);
+// ─── 启动扫描 ─────────────────────────────────────────────────────────────────
+startScanner(text => sendMessage(text));
 
 // ─── Telegram 长轮询 ──────────────────────────────────────────────────────────
 let offset = 0;
