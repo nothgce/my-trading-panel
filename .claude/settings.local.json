@@ -10,7 +10,11 @@
       "Bash(npm init:*)",
       "WebFetch(domain:docs.dexscreener.com)",
       "WebSearch",
-      "WebFetch(domain:datapi.jup.ag)"
+      "WebFetch(domain:datapi.jup.ag)",
+      "Bash(timeout 10 bash:*)",
+      "Bash(pkill:*)",
+      "Bash(sysctl:*)",
+      "Bash(pgrep:*)"
     ]
   }
 }
