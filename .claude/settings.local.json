@@ -14,7 +14,10 @@
       "Bash(timeout 10 bash:*)",
       "Bash(pkill:*)",
       "Bash(sysctl:*)",
-      "Bash(pgrep:*)"
+      "Bash(pgrep:*)",
+      "Bash(git config:*)",
+      "Bash(systemctl:*)",
+      "Bash(kill 1333576:*)"
     ]
   }
 }

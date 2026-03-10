@@ -79,9 +79,120 @@ export async function getTradeContracts(walletAddress, limit = 100) {
 }
 
 /**
+ * 钱包持仓代币列表（priapi，含盈亏数据，无需签名）
+ * 来源：web3.okx.com/portfolio/<addr>/analysis
+ * @param {string} walletAddress
+ * @param {string} chainId    - 默认 '501'（Solana）
+ * @param {number} limit      - 最多返回条数，默认 50
+ * @returns {Array<{
+ *   tokenContractAddress, tokenSymbol,
+ *   balance, balanceUsd,
+ *   buyVolume, sellVolume,
+ *   buyAvgPrice, sellAvgPrice,
+ *   realizedPnl, unrealizedPnl,
+ *   totalPnl, totalPnlPercentage,
+ *   totalTxBuy, totalTxSell
+ * }>}
+ */
+export async function getWalletTokenList(walletAddress, chainId = '501', limit = 50) {
+  const qs = new URLSearchParams({
+    walletAddress, chainId,
+    isAsc: 'false', sortType: '1',
+    offset: '0', limit: String(limit),
+    filterRisk: 'true', filterSmallBalance: 'false',
+    t: String(Date.now()),
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${BASE}/priapi/v1/dx/market/v2/pnl/token-list?${qs}`, {
+      headers: {
+        'accept': 'application/json',
+        'app-type': 'web',
+        'referer': `${BASE}/portfolio/${walletAddress}/analysis`,
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'x-cdn': BASE,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const j = await res.json();
+    if (j.code !== 0) throw { code: j.code, msg: j.msg };
+    return (j.data?.tokenList ?? []).map(t => ({
+      tokenContractAddress: t.tokenContractAddress,
+      tokenSymbol:          t.tokenSymbol,
+      balance:              t.balance,
+      balanceUsd:           t.balanceUsd,
+      buyVolume:            t.buyVolume,
+      sellVolume:           t.sellVolume,
+      buyAvgPrice:          t.buyAvgPrice,
+      sellAvgPrice:         t.sellAvgPrice,
+      realizedPnl:          t.realizedPnl,
+      unrealizedPnl:        t.unrealizedPnl,
+      totalPnl:             t.totalPnl,
+      totalPnlPercentage:   t.totalPnlPercentage,
+      totalTxBuy:           t.totalTxBuy,
+      totalTxSell:          t.totalTxSell,
+    }));
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+/**
  * 从交易历史中提取唯一 token 合约地址（工具函数）
  * @returns {string[]}
  */
 export function extractUniqueContracts(tradeHistory) {
   return [...new Set(tradeHistory.map(r => r.tokenContractAddress).filter(Boolean))];
+}
+
+/**
+ * 钱包盈亏摘要
+ * @param {string} walletAddress
+ * @param {string} chainId    - 默认 '501'（Solana）
+ * @param {number} periodType - 1=1d 2=7d 3=30d 4=90d 5=全部
+ * @returns {{
+ *   totalProfit, totalProfitRate,
+ *   realizedProfit, unrealizedProfit,
+ *   totalInvest, winRate, tradeCount
+ * }}
+ */
+export async function getWalletSummary(walletAddress, chainId = '501', periodType = 5) {
+  const qs = new URLSearchParams({
+    walletAddress, chainId,
+    periodType: String(periodType),
+    t: String(Date.now()),
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${BASE}/priapi/v1/dx/market/v2/pnl/wallet-profile/summary?${qs}`, {
+      headers: {
+        'accept': 'application/json',
+        'app-type': 'web',
+        'referer': `${BASE}/portfolio/${walletAddress}/history`,
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'x-cdn': BASE,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const j = await res.json();
+    if (j.code !== 0) throw { code: j.code, msg: j.msg };
+    const d = j.data ?? {};
+    return {
+      totalProfit:      d.totalProfit,
+      totalProfitRate:  d.totalProfitRate,
+      realizedProfit:   d.realizedProfit,
+      unrealizedProfit: d.unrealizedProfit,
+      totalInvest:      d.totalInvest,
+      winRate:          d.winRate,
+      tradeCount:       d.tradeCount,
+    };
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
 }

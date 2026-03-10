@@ -63,16 +63,18 @@ function gmgnLink(addr) {
 }
 
 function walletLink(addr) {
-  return `<a href="https://gmgn.ai/sol/address/${addr}">🔗</a>`;
+  return `<a href="https://gmgn.ai/sol/address/${addr}">${addr}</a>`;
 }
 
 function fmtTable(rows) {
   if (!rows.length) return '  (无数据)';
   return rows.map(r => {
-    const sym = r.symbol.length > 12 ? r.symbol.slice(0, 11) + '…' : r.symbol;
-    const usd  = r.totalUsd != null && r.totalUsd > 0 ? ` ${fmtUsd(r.totalUsd)}` : '';
-    const link = r.contract ? ` ${gmgnLink(r.contract)}` : '';
-    return `  ${escHtml(sym.padEnd(13))} · ${r.count}人${usd}${link}`;
+    const sym    = r.symbol.length > 12 ? r.symbol.slice(0, 11) + '…' : r.symbol;
+    const usd    = r.totalUsd != null && r.totalUsd > 0 ? ` ${fmtUsd(r.totalUsd)}` : '';
+    const symStr = r.contract
+      ? `<a href="https://gmgn.ai/sol/token/${r.contract}">${escHtml(sym)}</a>`
+      : escHtml(sym);
+    return `  ${symStr.padEnd(13)} · ${r.count}人${usd}`;
   }).join('\n');
 }
 
@@ -139,7 +141,7 @@ async function _handleCallback(query) {
     const lines = [
       `<b>${escHtml(entry.symbol)} · ${groupLabel}${typeLabel}地址 (${wallets.length}人)</b>`,
       ``,
-      ...shown.map(a => `<code>${a}</code> ${walletLink(a)}`),
+      ...shown.map(a => walletLink(a)),
       ...(wallets.length > 20 ? [`…共 ${wallets.length} 人，仅显示前 20`] : []),
     ];
 

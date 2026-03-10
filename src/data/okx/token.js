@@ -50,6 +50,57 @@ export async function getHolders(chainIndex, tokenAddress) {
 }
 
 /**
+ * 持仓排行 v2（priapi，无条数上限限制）
+ * 来源：web3.okx.com/token/solana/<CA> 页面
+ * @param {string} tokenAddress
+ * @param {string} chainId  - 默认 '501'（Solana）
+ * @returns {Array<{
+ *   holderWalletAddress, holdAmount, holdRatio,
+ *   holdValue, rank, isContract
+ * }>}
+ */
+export async function getHoldersV2(tokenAddress, chainId = '501') {
+  const BASE = 'https://web3.okx.com';
+  const qs = new URLSearchParams({
+    chainId,
+    tokenAddress,
+    t: String(Date.now()),
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(
+      `${BASE}/priapi/v1/dx/market/v2/holders/ranking-list-v2?${qs}`,
+      {
+        headers: {
+          'accept': 'application/json',
+          'app-type': 'web',
+          'referer': `${BASE}/token/solana/${tokenAddress}`,
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'x-cdn': BASE,
+        },
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timer);
+    const j = await res.json();
+    if (j.code !== 0) throw { code: j.code, msg: j.msg };
+    const list = j.data?.list ?? j.data ?? [];
+    return list.map(h => ({
+      holderWalletAddress: h.walletAddress ?? h.holderWalletAddress,
+      holdAmount:          h.amount        ?? h.holdAmount,
+      holdRatio:           h.ratio         ?? h.holdRatio,
+      holdValue:           h.value         ?? h.holdValue,
+      rank:                h.rank,
+      isContract:          h.isContract,
+    }));
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+/**
  * 按名称/符号/合约地址搜索代币
  * @param {string} chains - 逗号分隔的 chainIndex，如 '501' 或 '1,56'
  * @param {string} query  - 代币名称、符号或合约地址

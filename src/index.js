@@ -2,6 +2,7 @@ import './proxy.js';
 import { handleUpdate, sendMessage } from './bot/commands.js';
 import { startScanner } from './services/scanner.js';
 import { telegramConfig } from './config/telegram.js';
+import { log } from './logger.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -13,7 +14,7 @@ let offset = 0;
 
 async function poll() {
   const base = `https://api.telegram.org/bot${telegramConfig.botToken}`;
-  console.log('[bot] 开始轮询...');
+  log.info('[bot] 开始轮询...');
 
   while (true) {
     try {
@@ -23,19 +24,19 @@ async function poll() {
       );
       const j = await res.json();
       if (!j.ok) {
-        console.error('[bot] getUpdates error:', j.description);
+        log.error('[bot] getUpdates error:', j.description);
         await sleep(5000);
         continue;
       }
       for (const upd of j.result ?? []) {
         offset = upd.update_id + 1;
         handleUpdate(upd).catch(e =>
-          console.error('[bot] handleUpdate error:', e?.message ?? e),
+          log.error('[bot] handleUpdate error:', e?.message ?? e),
         );
       }
     } catch (e) {
       if (e?.name !== 'TimeoutError') {
-        console.error('[bot] poll error:', e?.message ?? e);
+        log.error('[bot] poll error:', e?.message ?? e);
         await sleep(5000);
       }
     }

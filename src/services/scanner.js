@@ -8,39 +8,38 @@ let _timer    = null;
 let _onUpdate = null;   // callback(text: string)
 let _firstRun = true;
 
-/** 格式化单个代币行（Jupiter datapi 字段） */
+const fmtUsd = v =>
+  Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toFixed(2)}M`
+  : Math.abs(v) >= 1_000   ? `$${(v / 1_000).toFixed(1)}K`
+  : `$${v.toFixed(0)}`;
+
+/** 格式化单个代币行 */
 function fmtToken(t, rank) {
   const symbol  = t.symbol ?? '?';
   const ca      = t.id ?? '';
   const mc      = t.mcap ?? t.fdv ?? 0;
-  const liq     = t.liquidity ?? 0;
   const ch5m    = t.stats5m?.priceChange ?? 0;
-  const ch1h    = t.stats1h?.priceChange ?? 0;
-  const netFlow = (t.stats5m?.buyVolume ?? 0) - (t.stats5m?.sellVolume ?? 0);
-  const buyers  = t.stats5m?.numNetBuyers ?? 0;
   const created = t.createdAt ? t.createdAt.slice(0, 10).replace(/-/g, '') : '?';
-
-  const fmtUsd = v =>
-    Math.abs(v) >= 1_000_000 ? `$${(v / 1_000_000).toFixed(2)}M`
-    : Math.abs(v) >= 1_000   ? `$${(v / 1_000).toFixed(1)}K`
-    : `$${v.toFixed(0)}`;
-
   const arrow5m = ch5m >= 0 ? '▲' : '▼';
-  const arrow1h = ch1h >= 0 ? '▲' : '▼';
-  const link    = ca ? `<a href="${BASE_GMGN}/sol/token/${ca}">🔗</a>` : '';
+  const symLink = ca
+    ? `<a href="${BASE_GMGN}/sol/token/${ca}"><b>$${symbol}</b></a>`
+    : `<b>$${symbol}</b>`;
 
   return (
-    `${rank}. <b>$${symbol}</b> ${link}\n` +
-    `   MC:${fmtUsd(mc)}  ${arrow5m}${Math.abs(ch5m).toFixed(1)}%/5m  ${arrow1h}${Math.abs(ch1h).toFixed(1)}%/1h\n` +
-    `   净流入:${fmtUsd(netFlow)}  净买家:${buyers}人  创建:${created}`
+    `${rank}. ${symLink}\n` +
+    `   MC:${fmtUsd(mc)}  ${arrow5m}${Math.abs(ch5m).toFixed(1)}%  创建:${created}`
   );
 }
 
-/** 格式化完整消息 */
+/** 格式化完整消息：过滤 <3M 市值，按市值升序 */
 function fmtMessage(list) {
   const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-  const rows = list.map((t, i) => fmtToken(t, i + 1)).join('\n');
-  return `🔍 <b>Solana 5m 净买榜 (${list.length}) · 按净流入排名</b>  <code>${now}</code>\n\n${rows}`;
+  const filtered = list
+    .filter(t => (t.mcap ?? t.fdv ?? 0) < 3_000_000)
+    .sort((a, b) => (b.mcap ?? b.fdv ?? 0) - (a.mcap ?? a.fdv ?? 0));
+  if (!filtered.length) return '';
+  const rows = filtered.map((t, i) => fmtToken(t, i + 1)).join('\n');
+  return `🔍 <b>Solana 净买榜 (${filtered.length}) · 3M以下 · 涨幅5min</b>  <code>${now}</code>\n\n${rows}`;
 }
 
 /**
@@ -76,6 +75,7 @@ async function _run() {
     }
 
     const text = fmtMessage(list);
+    if (!text) return;
     console.log('[scanner]\n' + text.replace(/<[^>]+>/g, ''));
     _onUpdate?.(text)?.catch(e => console.error('[scanner] 推送失败:', e?.message ?? e));
   } catch (err) {
