@@ -33,6 +33,52 @@ export async function getCandles(chainIndex, tokenAddress, bar = '5m', limit = 1
   }));
 }
 
+/**
+ * 历史 K 线（priapi，支持任意时间起点，无需签名）
+ * 与 getCandles 的区别：可通过 after 参数获取任意历史时段数据
+ * @param {string} tokenAddress
+ * @param {string} chainId   - 默认 '501'（Solana）
+ * @param {number} after     - 起始时间戳（ms），返回该时间点之后的 K 线
+ * @param {string} bar       - 粒度: '1m'|'5m'|'15m'|'1H'|'4H'|'1D'
+ * @param {number} limit     - 最多返回条数
+ * @returns {Array<{ ts, open, high, low, close, vol, volUsd }>}
+ */
+export async function getHistoryCandles(tokenAddress, chainId = '501', after, bar = '1m', limit = 100) {
+  const BASE = 'https://web3.okx.com';
+  const qs = new URLSearchParams({
+    chainId, address: tokenAddress,
+    bar, limit: String(limit),
+    t: String(Date.now()),
+    ...(after != null ? { after: String(after) } : {}),
+  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const res = await fetch(
+      `${BASE}/priapi/v5/dex/token/market/history-dex-token-hlc-candles?${qs}`,
+      {
+        headers: {
+          'accept': 'application/json',
+          'app-type': 'web',
+          'referer': `${BASE}/token/solana/${tokenAddress}`,
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'x-cdn': BASE,
+        },
+        signal: ctrl.signal,
+      },
+    );
+    clearTimeout(timer);
+    const j = await res.json();
+    if (j.code !== 0) throw { code: j.code, msg: j.msg };
+    return (j.data ?? []).map(([ts, open, high, low, close, vol, volUsd]) => ({
+      ts, open, high, low, close, vol, volUsd,
+    }));
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 // ─── 刷量检测 ─────────────────────────────────────────────────────────────────
 
 function isBuy(type)  { return type === 'buy'  || type === 1 || type === '1'; }

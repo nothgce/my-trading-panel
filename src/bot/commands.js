@@ -1,6 +1,7 @@
 // 展示层：Telegram Bot 命令处理
 import { telegramConfig } from '../config/telegram.js';
 import { analyzeToken, topN } from '../services/analyzer.js';
+import { findAltWallets } from '../services/altFinder.js';
 
 function tgBase() {
   return `https://api.telegram.org/bot${telegramConfig.botToken}`;
@@ -105,6 +106,7 @@ export async function handleUpdate(update) {
 
   switch (cmd) {
     case '/ca':   return _handleCa(rest);
+    case '/cha':  return _handleCha(rest);
     case '/help': return _handleHelp();
   }
 }
@@ -218,6 +220,40 @@ async function _sendAnalysisResult(ca, { traders, holders }) {
   }
 }
 
+// ─── /cha 命令 ────────────────────────────────────────────────────────────────
+
+async function _handleCha(addr) {
+  if (!addr) return sendMessage('用法: /cha &lt;钱包地址&gt;');
+  await sendMessage([
+    `🔍 查小号: <code>${addr}</code>`,
+    ``,
+    `• 抓取最近 20 个买入代币及买入时间`,
+    `• 每个代币向前翻 10 页，收集更早买入且未清仓的地址`,
+    `• 筛选在 ≥75% 代币上均早于大号入场的候选`,
+    ``,
+    `预计需要 3-4 分钟，请稍候...`,
+  ].join('\n'));
+  try {
+    const results = await findAltWallets(addr, 20);
+    if (!results.length) {
+      return sendMessage([
+        `✅ 查询完成`,
+        `未发现疑似小号（无地址在 ≥75% 代币上早于大号买入且仍持仓）`,
+      ].join('\n'));
+    }
+    const lines = [
+      `🕵️ <b>疑似小号 Top20</b>  大号: <code>${addr}</code>`,
+      ``,
+      ...results.slice(0, 20).map((r, i) =>
+        `${String(i + 1).padStart(2)}. <code>${r.wallet}</code>  ${r.preBuyCount}`
+      ),
+    ];
+    await sendMessage(lines.join('\n'));
+  } catch (err) {
+    await sendMessage(`❌ 查询失败: ${err?.msg ?? err?.message ?? String(err)}`);
+  }
+}
+
 // ─── /help ────────────────────────────────────────────────────────────────────
 
 async function _handleHelp() {
@@ -225,5 +261,6 @@ async function _handleHelp() {
     `🤖 <b>命令列表</b>`,
     ``,
     `/ca &lt;CA&gt; — 分析代币大户持仓聚类`,
+    `/cha &lt;地址&gt; — 查找钱包潜在小号`,
   ].join('\n'));
 }

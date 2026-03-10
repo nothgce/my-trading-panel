@@ -47,11 +47,18 @@ async function fetchPage(walletAddress, chainId, pageSize, cursor, blockTimeMin,
 export async function getWalletTradeHistory(walletAddress, chainId = '501', limit = 100, daysBack = 180) {
   const now = Date.now();
   const blockTimeMin = now - daysBack * 24 * 60 * 60 * 1000;
-  const blockTimeMax = now + 24 * 60 * 60 * 1000;
 
-  // 单页拉取，pageSize 直接等于 limit，省去分页循环
-  const data = await fetchPage(walletAddress, chainId, limit, null, blockTimeMin, blockTimeMax);
-  const results = data?.rows ?? [];
+  const results = [];
+  let blockTimeMax = now + 24 * 60 * 60 * 1000;
+
+  while (results.length < limit) {
+    const data = await fetchPage(walletAddress, chainId, 100, null, blockTimeMin, blockTimeMax);
+    const rows = data?.rows ?? [];
+    if (!rows.length) break;
+    results.push(...rows);
+    if (!data.hasNext || rows.length < 100) break;
+    blockTimeMax = Number(rows[rows.length - 1].blockTime) - 1;
+  }
 
   return results.slice(0, limit).map(r => ({
     tokenContractAddress: r.tokenContractAddress,
@@ -60,9 +67,43 @@ export async function getWalletTradeHistory(walletAddress, chainId = '501', limi
     amount: r.amount,
     price: r.price,
     blockTime: r.blockTime,
-    tradeType: r.tradeType,          // 1=buy, 2=sell
+    tradeType: r.type,               // 1=buy, 2=sell
     singleRealizedProfit: r.singleRealizedProfit,
     mcap: r.mcap,
+  }));
+}
+
+/**
+ * 钱包买入历史，翻页直到凑够 minBuyTokens 个唯一代币（或无更多数据）
+ * @param {string} walletAddress
+ * @param {string} chainId
+ * @param {number} minBuyTokens  - 目标唯一买入代币数，默认 20
+ * @param {number} daysBack      - 往前查几天，默认 365 天
+ * @returns {Array<{ tokenContractAddress, tokenSymbol, blockTime, tradeType }>}
+ */
+export async function getWalletBuyHistory(walletAddress, chainId = '501', minBuyTokens = 20, daysBack = 365) {
+  const now = Date.now();
+  const blockTimeMin = now - daysBack * 24 * 60 * 60 * 1000;
+
+  const results = [];
+  const buyTokensSeen = new Set();
+  let blockTimeMax = now + 24 * 60 * 60 * 1000;
+
+  while (buyTokensSeen.size < minBuyTokens) {
+    const data = await fetchPage(walletAddress, chainId, 100, null, blockTimeMin, blockTimeMax);
+    const rows = data?.rows ?? [];
+    if (!rows.length) break;
+    results.push(...rows);
+    rows.filter(r => r.type === 1).forEach(r => buyTokensSeen.add(r.tokenContractAddress));
+    if (!data.hasNext || rows.length < 100) break;
+    blockTimeMax = Number(rows[rows.length - 1].blockTime) - 1;
+  }
+
+  return results.map(r => ({
+    tokenContractAddress: r.tokenContractAddress,
+    tokenSymbol: r.tokenSymbol,
+    blockTime: r.blockTime,
+    tradeType: r.type,
   }));
 }
 
