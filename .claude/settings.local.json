@@ -23,7 +23,15 @@
       "Bash(wait 1385604; echo \"=== 方案一完成 ===\")",
       "Bash(jobs -l 2>/dev/null; ps aux | grep test_v2 | grep -v grep; ps aux | grep 1385690 | grep -v grep)",
       "Bash(ps -p 1385604 -o pid,pcpu,pmem,etime,stat; date)",
-      "Bash(node --env-file=.env -e \"\nimport\\('./src/services/altFinder.js'\\).then\\(async \\({ findAltWallets }\\) => {\n  const t0 = Date.now\\(\\);\n  const results = await findAltWallets\\('EwTNPYTuwxMzrvL19nzBsSLXdAoEmVBKkisN87csKgtt', 20\\);\n  console.log\\('耗时:', \\(\\(Date.now\\(\\)-t0\\)/1000\\).toFixed\\(1\\)+'s'\\);\n  console.log\\('候选数:', results.length\\);\n  results.slice\\(0, 15\\).forEach\\(\\(r, i\\) =>\n    console.log\\(\\\\`\\\\${i+1}. \\\\${r.wallet}  共现\\\\${r.preBuyCount}/\\\\${r.totalCount}代币\\\\`\\)\n  \\);\n}\\);\n\" 2>&1 | tee /tmp/altfinder_v3.txt)"
+      "Bash(node --env-file=.env -e \"\nimport\\('./src/services/altFinder.js'\\).then\\(async \\({ findAltWallets }\\) => {\n  const t0 = Date.now\\(\\);\n  const results = await findAltWallets\\('EwTNPYTuwxMzrvL19nzBsSLXdAoEmVBKkisN87csKgtt', 20\\);\n  console.log\\('耗时:', \\(\\(Date.now\\(\\)-t0\\)/1000\\).toFixed\\(1\\)+'s'\\);\n  console.log\\('候选数:', results.length\\);\n  results.slice\\(0, 15\\).forEach\\(\\(r, i\\) =>\n    console.log\\(\\\\`\\\\${i+1}. \\\\${r.wallet}  共现\\\\${r.preBuyCount}/\\\\${r.totalCount}代币\\\\`\\)\n  \\);\n}\\);\n\" 2>&1 | tee /tmp/altfinder_v3.txt)",
+      "Bash(node -e \"fetch\\('https://api.telegram.org'\\).then\\(r=>console.log\\('OK',r.status\\)\\).catch\\(e=>console.log\\('FAIL',e.message\\)\\)\" 2>&1)",
+      "Bash(node -e \"fetch\\('https://api.telegram.org'\\).then\\(r=>console.log\\('OK',r.status\\)\\).catch\\(e=>console.log\\('FAIL',e.cause\\)\\)\" 2>&1)",
+      "Bash(which pm2:*)",
+      "Bash(chmod +x /root/panel/restart.sh)",
+      "Bash(systemctl restart:*)",
+      "Bash(journalctl -u trading-panel -n 5 --no-pager)",
+      "Bash(journalctl -u trading-panel --since \"1 minute ago\" --no-pager | tail -10)",
+      "Bash(journalctl -u trading-panel --since \"3 minutes ago\" --no-pager | grep -E \"poll error|开始轮询|Bot 已上线|推送失败|推送\" | tail -10)"
     ]
   }
 }

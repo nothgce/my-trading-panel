@@ -97,8 +97,8 @@ export async function findAltWallets(target, tokenLimit = 20) {
   // ── Step 3: 过滤共现比例 ≥75%，排序输出 ─────────────────────────────────
   const total = tokens.length;
   const results = [...walletTokens.entries()]
-    .filter(([, s]) => s.size >= 2 && s.size / total >= 0.75)
     .sort((a, b) => b[1].size - a[1].size)
+    .slice(0, 20)
     .map(([wallet, s]) => ({
       wallet,
       preBuyCount: s.size,
