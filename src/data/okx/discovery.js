@@ -7,7 +7,7 @@ const BASE = 'https://datapi.jup.ag';
  */
 export async function getDiscoveryList({
   minNetVolume24h = 1_000,      // 净流入 >= $1000
-  maxMcap         = 1_000_000,  // 市值 <= $1M
+  maxMcap         = 1_000_000,  // 市值 < $1M
   minTokenAge     = 4_320,      // 上线 >= 72h（单位：分钟）
   minLiquidity    = 5_000,      // 流动性 >= $5000
   hasSocials      = true,       // 有社媒

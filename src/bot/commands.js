@@ -229,17 +229,14 @@ async function _handleCha(addr) {
     ``,
     `• 抓取最近 20 个买入代币及买入时间`,
     `• 每个代币向前翻 10 页，收集更早买入且未清仓的地址`,
-    `• 筛选在 ≥75% 代币上均早于大号入场的候选`,
+    `• 按早买代币数排序，输出前 20 个候选地址`,
     ``,
     `预计需要 3-4 分钟，请稍候...`,
   ].join('\n'));
   try {
     const results = await findAltWallets(addr, 20);
     if (!results.length) {
-      return sendMessage([
-        `✅ 查询完成`,
-        `未发现疑似小号（无地址在 ≥75% 代币上早于大号买入且仍持仓）`,
-      ].join('\n'));
+      return sendMessage(`✅ 查询完成，未找到早买地址`);
     }
     const lines = [
       `🕵️ <b>疑似小号 Top20</b>  大号: <code>${addr}</code>`,
