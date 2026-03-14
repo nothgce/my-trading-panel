@@ -97,7 +97,7 @@ export async function quickScan(tokenAddress, tokenSymbol, onCluster) {
   // Step 3: 筛选 >8 人共持的代币，按人数降序
   const clusters = [...tokenMap.entries()]
     .map(([ca, v]) => ({ ca, symbol: v.symbol, count: v.wallets.size, totalUsd: v.totalUsd }))
-    .filter(r => r.count > MIN_CLUSTER)
+    .filter(r => r.count > MIN_CLUSTER && r.totalUsd >= 5)
     .sort((a, b) => b.count - a.count);
 
   if (!clusters.length) {

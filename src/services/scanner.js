@@ -56,8 +56,7 @@ function fmtQuickScanResult(tokenAddress, tokenSymbol, clusters) {
   const link    = `<a href="${BASE_GMGN}/sol/token/${tokenAddress}"><b>$${tokenSymbol}</b></a>`;
   const rows    = clusters.map(c => {
     const symLink = `<a href="${BASE_GMGN}/sol/token/${c.ca}">${c.symbol}</a>`;
-    const usd     = c.totalUsd > 0 ? ` ${fmtUsd(c.totalUsd)}` : '';
-    return `  ${symLink} · ${c.count}人${usd}`;
+    return `  ${symLink} · ${c.count}人 ${fmtUsd(c.totalUsd)}`;
   }).join('\n');
 
   return [
