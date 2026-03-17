@@ -2,6 +2,7 @@ import './proxy.js';
 import { handleUpdate, sendMessage } from './bot/commands.js';
 import { startScanner } from './services/scanner.js';
 import { telegramConfig } from './config/telegram.js';
+import { botConfig } from './config/botConfig.js';
 import { log } from './logger.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -22,7 +23,9 @@ function recordPollError() {
 }
 
 // ─── 启动扫描 ─────────────────────────────────────────────────────────────────
-startScanner(text => sendMessage(text));
+startScanner(text => sendMessage(text,
+  botConfig.alertTopicId ? { message_thread_id: botConfig.alertTopicId } : {}
+));
 
 // ─── Telegram 长轮询 ──────────────────────────────────────────────────────────
 let offset = 0;

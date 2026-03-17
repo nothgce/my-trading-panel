@@ -3,6 +3,7 @@ import { telegramConfig } from '../config/telegram.js';
 import { analyzeToken, topN } from '../services/analyzer.js';
 import { findAltWallets } from '../services/altFinder.js';
 import { scanConfig, getActivePreset, getPreset, addPreset, deletePreset, setActive, saveConfig } from '../config/scanConfig.js';
+import { botConfig, saveBotConfig } from '../config/botConfig.js';
 
 function tgBase() {
   return `https://api.telegram.org/bot${telegramConfig.botToken}`;
@@ -60,6 +61,15 @@ async function editMessage(chatId, messageId, text, extra = {}) {
   if (!j.ok && j.description !== 'Bad Request: message is not modified')
     console.error('[bot] editMessage error:', j.description);
   return j;
+}
+
+// ─── 回复上下文（引用原消息 + 保持话题） ─────────────────────────────────────
+
+function replyCtx(msg) {
+  return {
+    reply_to_message_id: msg.message_id,
+    ...(msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}),
+  };
 }
 
 // ─── 格式化工具 ───────────────────────────────────────────────────────────────
@@ -197,10 +207,11 @@ export async function handleUpdate(update) {
   const rest = spaceIdx === -1 ? '' : text.slice(spaceIdx + 1).trim();
 
   switch (cmd) {
-    case '/ca':       return _handleCa(rest);
-    case '/cha':      return _handleCha(rest);
-    case '/settings': return _handleSettings();
-    case '/help':     return _handleHelp();
+    case '/ca':       return _handleCa(rest, msg);
+    case '/cha':      return _handleCha(rest, msg);
+    case '/settings': return _handleSettings(msg);
+    case '/topicid':  return _handleTopicId(rest, msg);
+    case '/help':     return _handleHelp(msg);
   }
 }
 
@@ -254,8 +265,8 @@ async function _handleCallback(query) {
 
 // ─── /ca 命令 ─────────────────────────────────────────────────────────────────
 
-async function _handleCa(ca) {
-  if (!ca) return sendMessage('用法: /ca <代币合约地址>');
+async function _handleCa(ca, msg) {
+  if (!ca) return sendMessage('用法: /ca <代币合约地址>', replyCtx(msg));
   await sendMessage([
     `🔍 分析中: <code>${ca}</code> ${gmgnLink(ca)}`,
     ``,
@@ -265,12 +276,12 @@ async function _handleCa(ca) {
     `• 仅展示 ≥2 人同时涉及的代币`,
     ``,
     `预计需要 1-2 分钟，请稍候...`,
-  ].join('\n'));
+  ].join('\n'), replyCtx(msg));
   try {
     const result = await analyzeToken(ca, { holderTopN: telegramConfig.topHolderCount });
-    await _sendAnalysisResult(ca, result);
+    await _sendAnalysisResult(ca, result, msg);
   } catch (err) {
-    await sendMessage(`❌ 分析失败: ${err?.msg ?? err?.message ?? String(err)}`);
+    await sendMessage(`❌ 分析失败: ${err?.msg ?? err?.message ?? String(err)}`, replyCtx(msg));
   }
 }
 
@@ -286,8 +297,9 @@ function _buildKeyboard(rows, sid, group, type) {
   return { inline_keyboard: keyboard };
 }
 
-async function _sendAnalysisResult(ca, { traders, holders }) {
+async function _sendAnalysisResult(ca, { traders, holders }, msg) {
   const sid = storeSession({ traders, holders });
+  const ctx = replyCtx(msg);
 
   const traderHoldTop  = topN(traders.holdMap,  15).filter(r => r.count >= 2 && (r.totalUsd ?? 0) >= 5);
   const traderTradeTop = topN(traders.tradeMap, 15).filter(r => r.count >= 2);
@@ -300,7 +312,7 @@ async function _sendAnalysisResult(ca, { traders, holders }) {
     ``,
     `近期交易者: ${traders.addresses.length} 人`,
     `链上大户:   ${holders.addresses.length} 人`,
-  ].join('\n'));
+  ].join('\n'), ctx);
 
   const blocks = [
     { label: '📊 <b>交易者持仓聚类</b>',     rows: traderHoldTop,  group: 'T', type: 'h' },
@@ -310,15 +322,15 @@ async function _sendAnalysisResult(ca, { traders, holders }) {
   ];
 
   for (const { label, rows, group, type } of blocks) {
-    const extra = rows.length ? { reply_markup: _buildKeyboard(rows, sid, group, type) } : {};
+    const extra = { ...ctx, ...(rows.length ? { reply_markup: _buildKeyboard(rows, sid, group, type) } : {}) };
     await sendMessage(`${label}\n` + fmtTable(rows), extra);
   }
 }
 
 // ─── /cha 命令 ────────────────────────────────────────────────────────────────
 
-async function _handleCha(addr) {
-  if (!addr) return sendMessage('用法: /cha &lt;钱包地址&gt;');
+async function _handleCha(addr, msg) {
+  if (!addr) return sendMessage('用法: /cha &lt;钱包地址&gt;', replyCtx(msg));
   await sendMessage([
     `🔍 查小号: <code>${addr}</code>`,
     ``,
@@ -327,11 +339,11 @@ async function _handleCha(addr) {
     `• 按早买代币数排序，输出前 20 个候选地址`,
     ``,
     `预计需要 3-4 分钟，请稍候...`,
-  ].join('\n'));
+  ].join('\n'), replyCtx(msg));
   try {
     const results = await findAltWallets(addr, 20);
     if (!results.length) {
-      return sendMessage(`✅ 查询完成，未找到早买地址`);
+      return sendMessage(`✅ 查询完成，未找到早买地址`, replyCtx(msg));
     }
     const lines = [
       `🕵️ <b>疑似小号 Top20</b>  大号: <code>${addr}</code>`,
@@ -340,30 +352,66 @@ async function _handleCha(addr) {
         `${String(i + 1).padStart(2)}. <code>${r.wallet}</code>  ${r.preBuyCount}`
       ),
     ];
-    await sendMessage(lines.join('\n'));
+    await sendMessage(lines.join('\n'), replyCtx(msg));
   } catch (err) {
-    await sendMessage(`❌ 查询失败: ${err?.msg ?? err?.message ?? String(err)}`);
+    await sendMessage(`❌ 查询失败: ${err?.msg ?? err?.message ?? String(err)}`, replyCtx(msg));
   }
 }
 
 // ─── /help ────────────────────────────────────────────────────────────────────
 
-async function _handleHelp() {
+async function _handleHelp(msg) {
   return sendMessage([
     `🤖 <b>命令列表</b>`,
     ``,
     `/ca &lt;CA&gt; — 分析代币大户持仓聚类`,
     `/cha &lt;地址&gt; — 查找钱包潜在小号`,
     `/settings — 扫描参数预设管理`,
-  ].join('\n'));
+    `/topicid — 查看当前话题 ID / 设置警报话题`,
+  ].join('\n'), replyCtx(msg));
 }
 
 // ─── /settings ────────────────────────────────────────────────────────────────
 
-async function _handleSettings() {
+async function _handleSettings(msg) {
   return sendMessage('⚙️ <b>设置 · 预设列表</b>', {
+    ...replyCtx(msg),
     reply_markup: _buildPresetListKeyboard(),
   });
+}
+
+// ─── /topicid ─────────────────────────────────────────────────────────────────
+
+async function _handleTopicId(arg, msg) {
+  const threadId = msg.message_thread_id ?? null;
+
+  // /topicid set → 将当前话题设为警报话题
+  if (arg === 'set') {
+    if (!threadId) return sendMessage('❌ 当前消息不在话题中', replyCtx(msg));
+    botConfig.alertTopicId = threadId;
+    saveBotConfig();
+    return sendMessage(`✅ 警报话题已设置为 <code>${threadId}</code>`, replyCtx(msg));
+  }
+
+  // /topicid clear → 清除警报话题
+  if (arg === 'clear') {
+    botConfig.alertTopicId = null;
+    saveBotConfig();
+    return sendMessage('✅ 警报话题已清除（发送到默认位置）', replyCtx(msg));
+  }
+
+  // /topicid → 显示信息
+  const lines = [
+    `🗂 <b>话题信息</b>`,
+    ``,
+    threadId ? `当前话题 ID: <code>${threadId}</code>` : '当前消息不在话题中',
+    ``,
+    `警报推送话题: ${botConfig.alertTopicId ? `<code>${botConfig.alertTopicId}</code>` : '未设置'}`,
+    ``,
+    `/topicid set — 将当前话题设为警报推送目标`,
+    `/topicid clear — 清除警报话题设置`,
+  ];
+  return sendMessage(lines.join('\n'), replyCtx(msg));
 }
 
 async function _handlePendingInput(text) {
