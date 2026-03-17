@@ -1,0 +1,31 @@
+{
+  "activePresetId": "p2",
+  "presets": [
+    {
+      "id": "default",
+      "name": "默认",
+      "timeframe": "5m",
+      "minMcap": 0,
+      "maxMcap": 1000000,
+      "minNetVolume": 1000,
+      "minLiquidity": 5000,
+      "minTokenAge": 4320,
+      "maxTokenAge": null,
+      "hasSocials": true,
+      "minCluster": 8
+    },
+    {
+      "id": "p2",
+      "name": "very early",
+      "timeframe": "5m",
+      "minMcap": 10000,
+      "maxMcap": 100000,
+      "minNetVolume": 1000,
+      "minLiquidity": 5000,
+      "minTokenAge": 1,
+      "maxTokenAge": null,
+      "hasSocials": true,
+      "minCluster": 8
+    }
+  ]
+}

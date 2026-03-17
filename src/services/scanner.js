@@ -2,6 +2,7 @@
 import { getDiscoveryList } from '../data/okx/discovery.js';
 import { quickScan } from './quickScan.js';
 import { log } from '../logger.js';
+import { getActivePreset } from '../config/scanConfig.js';
 
 const INTERVAL_MS = 60_000;
 const BASE_GMGN   = 'https://gmgn.ai';
@@ -35,26 +36,30 @@ function fmtToken(t, rank) {
   );
 }
 
-/** 过滤出符合条件的代币列表（市值 < $1M，按市值降序） */
+/** 过滤出符合条件的代币列表（按市值上下限，降序） */
 function filterList(list) {
+  const { minMcap, maxMcap } = getActivePreset();
   return list
-    .filter(t => (t.mcap ?? t.fdv ?? 0) < 1_000_000)
+    .filter(t => { const mc = t.mcap ?? t.fdv ?? 0; return mc < maxMcap && mc >= minMcap; })
     .sort((a, b) => (b.mcap ?? b.fdv ?? 0) - (a.mcap ?? a.fdv ?? 0));
 }
 
 /** 格式化净买榜消息 */
 function fmtMessage(filtered) {
   if (!filtered.length) return '';
+  const { minMcap, maxMcap } = getActivePreset();
   const now  = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-  const rows = filtered.map((t, i) => fmtToken(t, i + 1)).join('\n');
-  return `🔍 <b>Solana 净买榜 (${filtered.length}) · 1M以下 · 涨幅5min</b>  <code>${now}</code>\n\n${rows}`;
+  const range = minMcap > 0 ? `${fmtUsd(minMcap)}~${fmtUsd(maxMcap)}` : `${fmtUsd(maxMcap)}以下`;
+  const rows  = filtered.map((t, i) => fmtToken(t, i + 1)).join('\n');
+  return `🔍 <b>Solana 净买榜 (${filtered.length}) · ${range} · 涨幅5min</b>  <code>${now}</code>\n\n${rows}`;
 }
 
 /** 格式化快速聚类报警消息 */
 function fmtQuickScanResult(tokenAddress, tokenSymbol, clusters) {
-  const caShort = `${tokenAddress.slice(0, 4)}...${tokenAddress.slice(-4)}`;
-  const link    = `<a href="${BASE_GMGN}/sol/token/${tokenAddress}"><b>$${tokenSymbol}</b></a>`;
-  const rows    = clusters.map(c => {
+  const caShort   = `${tokenAddress.slice(0, 4)}...${tokenAddress.slice(-4)}`;
+  const link      = `<a href="${BASE_GMGN}/sol/token/${tokenAddress}"><b>$${tokenSymbol}</b></a>`;
+  const threshold = getActivePreset().minCluster + 1;
+  const rows      = clusters.map(c => {
     const symLink = `<a href="${BASE_GMGN}/sol/token/${c.ca}">${c.symbol}</a>`;
     return `  ${symLink} · ${c.count}人 ${fmtUsd(c.totalUsd)}`;
   }).join('\n');
@@ -63,7 +68,7 @@ function fmtQuickScanResult(tokenAddress, tokenSymbol, clusters) {
     `🔔 <b>持仓聚类警报</b> · ${link}`,
     `<code>${caShort}</code>`,
     ``,
-    `前 100 大持仓者中，以下代币 ≥ 9 人共持:`,
+    `前 100 大持仓者中，以下代币 ≥ ${threshold} 人共持:`,
     rows,
   ].join('\n');
 }
@@ -105,7 +110,17 @@ export function stopScanner() {
 
 async function _run() {
   try {
-    const list = await getDiscoveryList();
+    const preset = getActivePreset();
+    const list = await getDiscoveryList({
+      timeframe:    preset.timeframe,
+      minMcap:      preset.minMcap,
+      maxMcap:      preset.maxMcap,
+      minNetVolume: preset.minNetVolume,
+      minLiquidity: preset.minLiquidity,
+      minTokenAge:  preset.minTokenAge,
+      maxTokenAge:  preset.maxTokenAge,
+      hasSocials:   preset.hasSocials,
+    });
     if (!list.length) {
       console.warn('[scanner] 返回空列表');
       return;

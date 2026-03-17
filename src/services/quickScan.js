@@ -4,11 +4,11 @@
 import { getHolderAddresses } from '../data/solana/holders.js';
 import { getWalletTokenList } from '../data/okx/wallet.js';
 import { log } from '../logger.js';
+import { getActivePreset } from '../config/scanConfig.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const HOLDER_TOP_N = 100;  // 前 100 大持仓者（只查持仓，不查交易历史）
-const MIN_CLUSTER  = 8;    // 超过 8 人才触发（即 ≥ 9）
 const DELAY_MS     = 700;  // OKX API 请求间隔
 
 // Solana 链上稳定币 + Wrapped SOL 合约地址（大写对比不敏感，直接用 Set）
@@ -94,10 +94,11 @@ export async function quickScan(tokenAddress, tokenSymbol, onCluster) {
     }
   }
 
-  // Step 3: 筛选 >8 人共持的代币，按人数降序
+  // Step 3: 筛选 >minCluster 人共持的代币，按人数降序
+  const minCluster = getActivePreset().minCluster;
   const clusters = [...tokenMap.entries()]
     .map(([ca, v]) => ({ ca, symbol: v.symbol, count: v.wallets.size, totalUsd: v.totalUsd }))
-    .filter(r => r.count > MIN_CLUSTER && r.totalUsd >= 5)
+    .filter(r => r.count > minCluster && r.totalUsd >= 5)
     .sort((a, b) => b.count - a.count);
 
   if (!clusters.length) {
