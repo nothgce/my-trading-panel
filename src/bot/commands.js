@@ -2,6 +2,7 @@
 import { telegramConfig } from '../config/telegram.js';
 import { analyzeToken, topN } from '../services/analyzer.js';
 import { findAltWallets } from '../services/altFinder.js';
+import { scanConfig, getActivePreset, getPreset, addPreset, deletePreset, setActive, saveConfig } from '../config/scanConfig.js';
 
 function tgBase() {
   return `https://api.telegram.org/bot${telegramConfig.botToken}`;
@@ -40,6 +41,25 @@ async function deleteMessage(chatId, messageId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
   });
+}
+
+async function editMessage(chatId, messageId, text, extra = {}) {
+  const res = await fetch(`${tgBase()}/editMessageText`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...extra,
+    }),
+  });
+  const j = await res.json();
+  if (!j.ok && j.description !== 'Bad Request: message is not modified')
+    console.error('[bot] editMessage error:', j.description);
+  return j;
 }
 
 // ─── 格式化工具 ───────────────────────────────────────────────────────────────
@@ -91,6 +111,74 @@ function storeSession(data) {
   return id;
 }
 
+// ─── 设置：待输入状态 ──────────────────────────────────────────────────────────
+// type: 'preset_name' | 'param'
+let _pendingInput = null;
+
+const fmtAge = v => v == null ? '无限' : (v >= 60 ? `${Math.round(v / 60)}h` : `${v}m`);
+
+const fmtMcap = v => v > 0 ? fmtUsd(v) : '无';
+
+const PARAM_META = {
+  minMcap:      { label: '市值下限',  fmt: fmtMcap },
+  maxMcap:      { label: '市值上限',  fmt: v => fmtUsd(v) },
+  minNetVolume: { label: null,        fmt: v => fmtUsd(v) },   // label 由 timeframe 动态决定
+  minLiquidity: { label: '流动性',   fmt: v => fmtUsd(v) },
+  minTokenAge:  { label: '上线最小', fmt: fmtAge },
+  maxTokenAge:  { label: '上线最大', fmt: fmtAge },
+  minCluster:   { label: '聚类阈值', fmt: v => `>${v}人` },
+};
+
+const TIMEFRAMES = ['5m', '1h', '6h', '24h'];
+
+function _buildPresetListKeyboard() {
+  const rows = scanConfig.presets.map(p => [{
+    text: p.id === scanConfig.activePresetId ? `🟢 ${p.name}` : p.name,
+    callback_data: `cfg:edit:${p.id}`,
+  }]);
+  rows.push([{ text: '＋ 新增预设', callback_data: 'cfg:new' }]);
+  return { inline_keyboard: rows };
+}
+
+function _presetTitle(preset) {
+  const active = preset.id === scanConfig.activePresetId ? ' 🟢 运行中' : '';
+  return `⚙️ <b>预设: ${escHtml(preset.name)}</b>${active}`;
+}
+
+function _buildPresetEditKeyboard(preset) {
+  const tfRow = [
+    { text: '时间范围', callback_data: 'cfg:noop' },
+    ...TIMEFRAMES.map(tf => ({
+      text: preset.timeframe === tf ? `✓${tf}` : tf,
+      callback_data: `cfg:tf:${preset.id}:${tf}`,
+    })),
+  ];
+
+  const paramRows = Object.entries(PARAM_META).map(([key, meta]) => {
+    const label = key === 'minNetVolume' ? `${preset.timeframe}净流入` : meta.label;
+    return [{
+      text: `${label}: ${meta.fmt(preset[key])}  ✏️`,
+      callback_data: `cfg:inp:${preset.id}:${key}`,
+    }];
+  });
+
+  const socialRow = [{
+    text: `有社媒: ${preset.hasSocials ? '✅ 开启' : '❌ 关闭'}`,
+    callback_data: `cfg:tog:${preset.id}`,
+  }];
+
+  const actionRow = [];
+  if (preset.id !== scanConfig.activePresetId)
+    actionRow.push({ text: '❌ 未激活', callback_data: `cfg:act:${preset.id}` });
+  if (scanConfig.presets.length > 1)
+    actionRow.push({ text: '🗑️ 删除', callback_data: `cfg:del:${preset.id}` });
+  actionRow.push({ text: '← 列表', callback_data: 'cfg:list' });
+
+  return {
+    inline_keyboard: [tfRow, ...paramRows, socialRow, actionRow],
+  };
+}
+
 // ─── 命令分发 ─────────────────────────────────────────────────────────────────
 
 export async function handleUpdate(update) {
@@ -99,15 +187,20 @@ export async function handleUpdate(update) {
   const msg = update.message;
   if (!msg?.text) return;
 
+  // 处理设置待输入
+  if (_pendingInput && !msg.text.trim().startsWith('/'))
+    return _handlePendingInput(msg.text.trim());
+
   const text     = msg.text.trim();
   const spaceIdx = text.indexOf(' ');
   const cmd  = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase().split('@')[0];
   const rest = spaceIdx === -1 ? '' : text.slice(spaceIdx + 1).trim();
 
   switch (cmd) {
-    case '/ca':   return _handleCa(rest);
-    case '/cha':  return _handleCha(rest);
-    case '/help': return _handleHelp();
+    case '/ca':       return _handleCa(rest);
+    case '/cha':      return _handleCha(rest);
+    case '/settings': return _handleSettings();
+    case '/help':     return _handleHelp();
   }
 }
 
@@ -115,6 +208,8 @@ export async function handleUpdate(update) {
 
 async function _handleCallback(query) {
   const data = query.data ?? '';
+
+  if (data.startsWith('cfg:')) return _handleCfgCallback(query, data);
 
   if (data === 'del') {
     await deleteMessage(query.message.chat.id, query.message.message_id);
@@ -259,5 +354,139 @@ async function _handleHelp() {
     ``,
     `/ca &lt;CA&gt; — 分析代币大户持仓聚类`,
     `/cha &lt;地址&gt; — 查找钱包潜在小号`,
+    `/settings — 扫描参数预设管理`,
   ].join('\n'));
+}
+
+// ─── /settings ────────────────────────────────────────────────────────────────
+
+async function _handleSettings() {
+  return sendMessage('⚙️ <b>设置 · 预设列表</b>', {
+    reply_markup: _buildPresetListKeyboard(),
+  });
+}
+
+async function _handlePendingInput(text) {
+  const pending = _pendingInput;
+  _pendingInput = null;
+  if (pending.promptMsgId)
+    deleteMessage(pending.chatId, pending.promptMsgId).catch(() => {});
+
+  if (pending.type === 'preset_name') {
+    const preset = addPreset(text);
+    return sendMessage(_presetTitle(preset), {
+      reply_markup: _buildPresetEditKeyboard(preset),
+    });
+  }
+
+  if (pending.type === 'param') {
+    const { presetId, paramKey } = pending;
+    const preset = getPreset(presetId);
+    if (!preset) return sendMessage('❌ 预设不存在');
+
+    // maxTokenAge / minMcap 特殊处理：0 或非数字 = 无限制
+    if (paramKey === 'maxTokenAge') {
+      const value = parseFloat(text);
+      preset.maxTokenAge = (!isNaN(value) && value > 0) ? Math.round(value) : null;
+    } else if (paramKey === 'minMcap') {
+      const value = parseFloat(text);
+      preset.minMcap = (!isNaN(value) && value > 0) ? Math.round(value) : 0;
+    } else {
+      const value = parseFloat(text);
+      if (isNaN(value) || value <= 0) return sendMessage('❌ 请输入有效正数');
+      preset[paramKey] = Math.round(value);
+    }
+    saveConfig();
+
+    return sendMessage(_presetTitle(preset), {
+      reply_markup: _buildPresetEditKeyboard(preset),
+    });
+  }
+}
+
+async function _handleCfgCallback(query, data) {
+  const chatId = query.message.chat.id;
+  const msgId  = query.message.message_id;
+
+  const edit = (text, reply_markup) =>
+    editMessage(chatId, msgId, text, { reply_markup });
+
+  if (data === 'cfg:noop') return answerCallback(query.id);
+
+  if (data === 'cfg:list') {
+    await edit('⚙️ <b>设置 · 预设列表</b>', _buildPresetListKeyboard());
+    return answerCallback(query.id);
+  }
+
+  if (data === 'cfg:new') {
+    _pendingInput = { type: 'preset_name', chatId, promptMsgId: null };
+    const j = await sendMessage('请输入新预设名称:');
+    _pendingInput.promptMsgId = j.result?.message_id;
+    return answerCallback(query.id);
+  }
+
+  // cfg:edit:ID
+  if (data.startsWith('cfg:edit:')) {
+    const preset = getPreset(data.slice(9));
+    if (!preset) return answerCallback(query.id, '预设不存在');
+    await edit(_presetTitle(preset), _buildPresetEditKeyboard(preset));
+    return answerCallback(query.id);
+  }
+
+  // cfg:act:ID
+  if (data.startsWith('cfg:act:')) {
+    const preset = getPreset(data.slice(8));
+    if (!preset) return answerCallback(query.id);
+    setActive(preset.id);
+    await edit(_presetTitle(preset), _buildPresetEditKeyboard(preset));
+    return answerCallback(query.id, '✅ 已激活');
+  }
+
+  // cfg:del:ID
+  if (data.startsWith('cfg:del:')) {
+    const id = data.slice(8);
+    if (!deletePreset(id)) return answerCallback(query.id, '至少保留一个预设');
+    await edit('⚙️ <b>设置 · 预设列表</b>', _buildPresetListKeyboard());
+    return answerCallback(query.id, '已删除');
+  }
+
+  // cfg:tf:ID:tf
+  if (data.startsWith('cfg:tf:')) {
+    const [, , id, tf] = data.split(':');
+    const preset = getPreset(id);
+    if (!preset) return answerCallback(query.id);
+    preset.timeframe = tf;
+    saveConfig();
+    await edit(_presetTitle(preset), _buildPresetEditKeyboard(preset));
+    return answerCallback(query.id, `时间范围: ${tf}`);
+  }
+
+  // cfg:tog:ID  (toggle hasSocials)
+  if (data.startsWith('cfg:tog:')) {
+    const preset = getPreset(data.slice(8));
+    if (!preset) return answerCallback(query.id);
+    preset.hasSocials = !preset.hasSocials;
+    saveConfig();
+    await edit(_presetTitle(preset), _buildPresetEditKeyboard(preset));
+    return answerCallback(query.id);
+  }
+
+  // cfg:inp:ID:paramKey
+  if (data.startsWith('cfg:inp:')) {
+    const [, , id, paramKey] = data.split(':');
+    const preset = getPreset(id);
+    const meta   = PARAM_META[paramKey];
+    if (!preset || !meta) return answerCallback(query.id);
+    _pendingInput = { type: 'param', presetId: id, paramKey, chatId, promptMsgId: null };
+    const label = paramKey === 'minNetVolume' ? `${preset.timeframe}净流入` : meta.label;
+    const hint  = (paramKey === 'maxTokenAge' || paramKey === 'minMcap')
+      ? '（输入0或非数字 = 无限制）' : '（直接发送数字）';
+    const j = await sendMessage(
+      `请输入新的 <b>${label}</b>\n当前值: ${meta.fmt(preset[paramKey])}\n${hint}`
+    );
+    _pendingInput.promptMsgId = j.result?.message_id;
+    return answerCallback(query.id);
+  }
+
+  await answerCallback(query.id);
 }

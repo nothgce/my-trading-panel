@@ -6,9 +6,12 @@ const BASE = 'https://datapi.jup.ag';
  * 参数与 Jupiter 网页筛选器一致
  */
 export async function getDiscoveryList({
-  minNetVolume24h = 1_000,      // 净流入 >= $1000
-  maxMcap         = 1_000_000,  // 市值 < $1M
+  timeframe       = '5m',
+  minNetVolume    = 1_000,      // 净流入 >= $1000
+  minMcap         = 0,           // 市值下限，0 = 无下限
+  maxMcap         = 1_000_000,  // 市值上限
   minTokenAge     = 4_320,      // 上线 >= 72h（单位：分钟）
+  maxTokenAge     = null,       // 上线上限（分钟），null = 无上限
   minLiquidity    = 5_000,      // 流动性 >= $5000
   hasSocials      = true,       // 有社媒
 } = {}) {
@@ -19,17 +22,17 @@ export async function getDiscoveryList({
     maxLiquidity:           '999999999',
     minVolume24h:           '1',
     maxVolume24h:           '999999999',
-    minNetVolume5m:         String(minNetVolume24h),
-    maxNetVolume5m:         '999999999',
-    minNumNetBuyers5m:      '1',
-    maxNumNetBuyers5m:      '999999999',
-    minMcap:                '1',
+    [`minNetVolume${timeframe}`]: String(minNetVolume),
+    [`maxNetVolume${timeframe}`]: '999999999',
+    [`minNumNetBuyers${timeframe}`]: '1',
+    [`maxNumNetBuyers${timeframe}`]: '999999999',
+    minMcap:                String(Math.max(1, minMcap)),
     maxMcap:                String(maxMcap),
     minHolderCount:         '1',
     maxHolderCount:         '999999999',
     hasSocials:             String(hasSocials),
     minTokenAge:            String(minTokenAge),
-    maxTokenAge:            '999999999',
+    maxTokenAge:            maxTokenAge != null ? String(maxTokenAge) : '999999999',
     includeSparklines:      'false',
   });
 
@@ -37,7 +40,7 @@ export async function getDiscoveryList({
   const timer = setTimeout(() => controller.abort(), 15_000);
 
   try {
-    const res = await fetch(`${BASE}/v2/assets/toptraded/5m?${qs}`, {
+    const res = await fetch(`${BASE}/v2/assets/toptraded/${timeframe}?${qs}`, {
       headers: {
         'accept':          'application/json',
         'origin':          'https://jup.ag',
