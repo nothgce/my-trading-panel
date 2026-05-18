@@ -2,3 +2,10 @@ node_modules/
 .env
 .log
 bot.log
+
+# Claude Code internals
+.claude/
+CLAUDE.md
+
+# Local runtime state
+presets.json
