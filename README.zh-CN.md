@@ -1,4 +1,4 @@
-# Trading Panel
+# Solana Whale Monitor
 
 > 其他语言：[English](./README.md) · 简体中文
 
